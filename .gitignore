@@ -1,0 +1,5 @@
+.cococo/
+.env
+.env.*
+*.cocovars
+.DS_Store

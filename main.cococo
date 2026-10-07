@@ -1,0 +1,44 @@
+input "name" {
+  type = "string"
+  default = "Hello from GitHub"
+}
+
+input "handle" {
+  type = "string"
+  default = "hello-github"
+}
+
+custom_app "hello" {
+  name = input.name
+  handle = input.handle
+  kind = "PAGE"
+  publishedVersionId = custom_app_version.hello_v1.id
+}
+
+custom_app_version "hello_v1" {
+  customAppId = custom_app.hello.id
+  description = "A minimal app installed from a GitHub IaC module."
+
+  template = vue <<~VUE
+    <main style="max-width:640px;margin:64px auto;padding:32px;font-family:system-ui,sans-serif;color:#17352b;">
+      <p style="font-size:12px;letter-spacing:0.15em;">COCOCO / MODULE TEST</p>
+      <h1>Hello from GitHub.</h1>
+      <p>This app was installed using a reusable IaC module.</p>
+      <button type="button" @click="count++" style="padding:12px 20px;border:0;border-radius:8px;background:#17352b;color:white;cursor:pointer;">Say hello</button>
+      <p aria-live="polite">{{ count === 0 ? 'Try the button.' : 'Hello! Clicks: ' + count }}</p>
+    </main>
+  VUE
+
+  script = javascript <<~JAVASCRIPT
+    export default {
+      data() {
+        return { count: 0 }
+      }
+    }
+  JAVASCRIPT
+}
+
+output "app_id" {
+  type = "identity<custom_app>"
+  value = custom_app.hello.id
+}
