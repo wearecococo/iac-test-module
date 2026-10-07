@@ -1,0 +1,45 @@
+local t = require("test")
+local subject = require("cococo.subject")
+
+t.describe("persistent counter API", function()
+  t.it("starts at zero without writing on a read", function()
+    t.mock.host("ctx.store.get"):returns(true, nil)
+    t.mock.host("ctx.store.put"):using(function() error("read must not write") end)
+    t.expect(subject.load().read().count):eq(0)
+  end)
+
+  t.it("persists increments across fresh API instances", function()
+    local saved = nil
+    t.mock.host("ctx.store.get"):using(function(name, schema)
+      t.expect(name):eq("counter")
+      t.expect(schema):is_nil()
+      return true, saved
+    end)
+    t.mock.host("ctx.store.put"):using(function(name, data, schema)
+      t.expect(name):eq("counter")
+      t.expect(schema):is_nil()
+      saved = { name = name, data = { count = data.count } }
+      return true, saved
+    end)
+    t.expect(subject.load().increment().count):eq(1)
+    t.expect(subject.load().read().count):eq(1)
+    t.expect(subject.load().increment().count):eq(2)
+    t.expect(subject.load().read().count):eq(2)
+  end)
+
+  t.it("does not overwrite state when reading fails", function()
+    t.mock.host("ctx.store.get"):returns(false, "read unavailable")
+    t.mock.host("ctx.store.put"):using(function() error("must not write after failed read") end)
+    local ok, reason = pcall(function() return subject.load().increment() end)
+    t.expect(ok):eq(false)
+    t.expect(string.find(tostring(reason), "read unavailable", 1, true) ~= nil):eq(true)
+  end)
+
+  t.it("reports save failures instead of claiming success", function()
+    t.mock.host("ctx.store.get"):returns(true, { name = "counter", data = { count = 7 } })
+    t.mock.host("ctx.store.put"):returns(false, "write unavailable")
+    local ok, reason = pcall(function() return subject.load().increment() end)
+    t.expect(ok):eq(false)
+    t.expect(string.find(tostring(reason), "write unavailable", 1, true) ~= nil):eq(true)
+  end)
+end)

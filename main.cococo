@@ -12,30 +12,69 @@ custom_app "hello" {
   name = input.name
   handle = input.handle
   kind = "PAGE"
-  publishedVersionId = custom_app_version.hello_v1.id
+  publishedVersionId = custom_app_version.hello_v2.id
 }
 
-custom_app_version "hello_v1" {
+custom_app_version "hello_v2" {
   customAppId = custom_app.hello.id
-  description = "A minimal app installed from a GitHub IaC module."
+  description = "A persistent counter backed by an app-owned data container and Lua RPC."
 
   template = vue <<~VUE
     <main style="max-width:640px;margin:64px auto;padding:32px;font-family:system-ui,sans-serif;color:#17352b;">
       <p style="font-size:12px;letter-spacing:0.15em;">COCOCO / MODULE TEST</p>
       <h1>Hello from GitHub.</h1>
-      <p>This app was installed using a reusable IaC module.</p>
-      <button type="button" @click="count++" style="padding:12px 20px;border:0;border-radius:8px;background:#17352b;color:white;cursor:pointer;">Say hello</button>
-      <p aria-live="polite">{{ count === 0 ? 'Try the button.' : 'Hello! Clicks: ' + count }}</p>
+      <p>This counter is saved on the server. Reload the app to see it again.</p>
+      <button type="button" @click="increment" :disabled="busy" style="padding:12px 20px;border:0;border-radius:8px;background:#17352b;color:white;cursor:pointer;">Say hello</button>
+      <p aria-live="polite">{{ count === null ? 'Loading…' : 'Saved clicks: ' + count }}</p>
+      <button type="button" @click="refresh" :disabled="busy">Refresh saved value</button>
+      <p v-if="error" role="alert" style="color:#a32222;">{{ error }}</p>
     </main>
   VUE
 
   script = javascript <<~JAVASCRIPT
+    import { rpc } from '@cococo/app'
     export default {
       data() {
-        return { count: 0 }
+        return { count: null, busy: false, error: '' }
+      },
+      mounted() { this.refresh() },
+      methods: {
+        async request(method) {
+          if (this.busy) return
+          this.busy = true
+          this.error = ''
+          try {
+            const result = await rpc(method)
+            this.count = result.count
+          } catch (error) {
+            this.error = 'Could not confirm the saved value. Refresh before trying again. ' + (error.message || String(error))
+          } finally {
+            this.busy = false
+          }
+        },
+        refresh() { return this.request('read') },
+        increment() { return this.request('increment') }
       }
     }
   JAVASCRIPT
+
+  serverApi.test = file("tests/counter.test.lua")
+  serverApi = lua <<~LUA
+    exports = {}
+    local function read_count()
+      local ok, record = ctx.store.get("counter", nil)
+      if not ok then error(record) end
+      return record and record.data.count or 0
+    end
+    function exports.read()
+      return { count = read_count() }
+    end
+    function exports.increment()
+      local ok, record = ctx.store.put("counter", { count = read_count() + 1 }, nil)
+      if not ok then error(record) end
+      return { count = record.data.count }
+    end
+  LUA
 }
 
 output "app_id" {
